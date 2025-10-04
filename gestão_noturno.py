@@ -6,6 +6,15 @@ st.set_page_config(page_title="Ranking Tempo Fora do Galpão", layout="wide")
 st.title("📊 Ranking de Tempo Fora do Galpão")
 
 # ================================
+# Função utilitária: formata horas decimais em HH:MM
+# ================================
+def formatar_horas(horas_decimais):
+    total_segundos = int(horas_decimais * 3600)
+    h = total_segundos // 3600
+    m = (total_segundos % 3600) // 60
+    return f"{h:02d}:{m:02d}"
+
+# ================================
 # 1️⃣ Upload do arquivo CSV ou Excel
 # ================================
 uploaded_file = st.file_uploader("📂 Envie a planilha de entrada/saída", type=["xlsx", "csv"])
@@ -61,6 +70,7 @@ if uploaded_file is not None:
             tempo_fora_lista.append({'Person': pessoa, 'Tempo Fora (h)': total_horas})
 
         df_tempo_fora = pd.DataFrame(tempo_fora_lista)
+        df_tempo_fora['Tempo Fora (HH:MM)'] = df_tempo_fora['Tempo Fora (h)'].apply(formatar_horas)
         df_tempo_fora = df_tempo_fora.sort_values('Tempo Fora (h)', ascending=False)
 
         # ================================
@@ -71,11 +81,11 @@ if uploaded_file is not None:
             df_tempo_fora,
             x='Person',
             y='Tempo Fora (h)',
-            text='Tempo Fora (h)',
+            text='Tempo Fora (HH:MM)',
             color='Tempo Fora (h)',
             color_continuous_scale='Reds'
         )
-        fig_bar.update_traces(texttemplate='%{text:.2f}h', textposition='outside')
+        fig_bar.update_traces(textposition='outside')
         fig_bar.update_layout(yaxis_title="Horas Fora", xaxis_title="Pessoa")
         st.plotly_chart(fig_bar, use_container_width=True)
 
@@ -88,8 +98,10 @@ if uploaded_file is not None:
             names='Person',
             values='Tempo Fora (h)',
             hole=0.4,
-            color_discrete_sequence=px.colors.qualitative.Pastel
+            color_discrete_sequence=px.colors.qualitative.Pastel,
+            hover_data=['Tempo Fora (HH:MM)']
         )
+        fig_pizza.update_traces(text=df_tempo_fora['Tempo Fora (HH:MM)'])
         st.plotly_chart(fig_pizza, use_container_width=True)
 
         # ================================
@@ -127,27 +139,33 @@ if uploaded_file is not None:
 
             # Agrupar por dia da semana
             df_dias_agg = df_dias.groupby('Dia da Semana', as_index=False)['Horas Fora'].sum()
+            df_dias_agg['Tempo Fora (HH:MM)'] = df_dias_agg['Horas Fora'].apply(formatar_horas)
+
+            # Ordenar dias da semana corretamente
+            ordem_dias = ['Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado','Domingo']
+            df_dias_agg['Dia da Semana'] = pd.Categorical(df_dias_agg['Dia da Semana'], categories=ordem_dias, ordered=True)
+            df_dias_agg = df_dias_agg.sort_values('Dia da Semana')
 
             # Gráfico de barras
             fig_dia_semana = px.bar(
                 df_dias_agg,
                 x='Dia da Semana',
                 y='Horas Fora',
-                text='Horas Fora',
+                text='Tempo Fora (HH:MM)',
                 color='Horas Fora',
                 color_continuous_scale='Blues'
             )
-            fig_dia_semana.update_traces(texttemplate='%{text:.2f}h', textposition='outside')
+            fig_dia_semana.update_traces(textposition='outside')
             fig_dia_semana.update_layout(yaxis_title="Horas Fora", xaxis_title="Dia da Semana")
             st.plotly_chart(fig_dia_semana, use_container_width=True)
         else:
             st.info("Não há registros suficientes de saída/entrada para calcular o tempo fora desta pessoa.")
 
         # ================================
-        # 7️⃣ Tabela detalhada (opcional)
+        # 7️⃣ Tabela detalhada
         # ================================
         st.subheader("📋 Tempo Fora detalhado por pessoa")
-        st.dataframe(df_tempo_fora.reset_index(drop=True))
+        st.dataframe(df_tempo_fora[['Person','Tempo Fora (HH:MM)']].reset_index(drop=True))
 
     except Exception as e:
         st.error(f"Erro ao processar o arquivo: {e}")
