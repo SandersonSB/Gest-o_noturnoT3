@@ -36,6 +36,19 @@ if uploaded_file is not None:
             st.stop()
 
         # ================================
+        # Dicionário de dias da semana em português
+        # ================================
+        dias_pt = {
+            'Monday': 'Segunda-feira',
+            'Tuesday': 'Terça-feira',
+            'Wednesday': 'Quarta-feira',
+            'Thursday': 'Quinta-feira',
+            'Friday': 'Sexta-feira',
+            'Saturday': 'Sábado',
+            'Sunday': 'Domingo'
+        }
+
+        # ================================
         # 2️⃣ Calcular Tempo Fora se houver saídas
         # ================================
         df_resultado = pd.DataFrame()
@@ -79,17 +92,7 @@ if uploaded_file is not None:
             # Gráfico de Tempo Fora por Dia da Semana real
             # ================================
             df_saidas = df[df['Status_Normalizado'] == 'SAIDA'].copy()
-            df_saidas['Dia da Semana'] = df_saidas['Time'].dt.day_name()
-            dias_pt = {
-                'Monday': 'Segunda-feira',
-                'Tuesday': 'Terça-feira',
-                'Wednesday': 'Quarta-feira',
-                'Thursday': 'Quinta-feira',
-                'Friday': 'Sexta-feira',
-                'Saturday': 'Sábado',
-                'Sunday': 'Domingo'
-            }
-            df_saidas['Dia da Semana'] = df_saidas['Dia da Semana'].map(dias_pt)
+            df_saidas['Dia da Semana'] = df_saidas['Time'].dt.day_name().map(dias_pt)
 
             df_semana_todos = df_saidas.groupby(['Person', 'Dia da Semana'], as_index=False).size().rename(columns={'size':'Saídas'})
             fig_semana_todos = px.bar(
