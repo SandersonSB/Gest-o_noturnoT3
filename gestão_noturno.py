@@ -2,8 +2,8 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-st.set_page_config(page_title="Análise de Tempo Fora do Galpão", layout="wide")
-st.title("📊 Análise de Tempo Fora do Galpão")
+st.set_page_config(page_title="Análise de Entradas e Saídas do Galpão", layout="wide")
+st.title("📊 Análise de Entradas e Saídas do Galpão")
 
 # ================================
 # 1️⃣ Upload do arquivo CSV ou Excel
@@ -21,113 +21,115 @@ if uploaded_file is not None:
         # Converter Time para datetime
         df['Time'] = pd.to_datetime(df['Time'], errors='coerce')
 
-        # Filtrar apenas eventos de Entrada e Saída
-        df = df[df['Entered/Exited Status'].isin(['Entered', 'Exited'])]
+        # Padronizar coluna Entered/Exited Status
+        df['Entered/Exited Status'] = df['Entered/Exited Status'].astype(str).str.strip().str.upper()
 
-        # Ordenar por Pessoa e Horário
-        df = df.sort_values(['Person', 'Time'])
+        # Detectar possíveis valores de entrada e saída
+        entrada_vals = ['IN', 'ENTRADA', 'ENTERED']
+        saida_vals = ['OUT', 'SAIDA', 'SAÍDA', 'EXITED']
 
-        # ================================
-        # 2️⃣ Calcular Tempo Fora (h) por pessoa
-        # ================================
-        tempo_fora = []
+        has_entradas = df['Entered/Exited Status'].isin(entrada_vals).any()
+        has_saidas = df['Entered/Exited Status'].isin(saida_vals).any()
 
-        for pessoa, grupo in df.groupby('Person'):
-            total_horas = 0
-            stack = []
-            for _, row in grupo.iterrows():
-                if row['Entered/Exited Status'] == 'Exited':
-                    stack.append(row['Time'])
-                elif row['Entered/Exited Status'] == 'Entered' and stack:
-                    saida = stack.pop()
-                    delta = row['Time'] - saida
-                    total_horas += delta.total_seconds() / 3600
-            tempo_fora.append({'Person': pessoa, 'Tempo Fora (h)': total_horas})
-
-        df_resultado = pd.DataFrame(tempo_fora, columns=['Person', 'Tempo Fora (h)'])
-
-        # Se não houver registros válidos
-        if df_resultado.empty:
-            st.warning("⚠️ Nenhum registro de saída encontrado para calcular o tempo fora.")
+        if not has_entradas:
+            st.warning("⚠️ Nenhuma entrada detectada no arquivo.")
             st.stop()
 
-        # Adicionar Data fictícia (para compatibilidade com gráficos por dia da semana)
-        df_resultado['Data'] = pd.Timestamp.today()
+        # ================================
+        # 2️⃣ Calcular Tempo Fora se houver saídas
+        # ================================
+        df_resultado = pd.DataFrame()
 
-        # Criar coluna Dia da Semana em português
-        dias_pt = {
-            'Monday': 'Segunda-feira',
-            'Tuesday': 'Terça-feira',
-            'Wednesday': 'Quarta-feira',
-            'Thursday': 'Quinta-feira',
-            'Friday': 'Sexta-feira',
-            'Saturday': 'Sábado',
-            'Sunday': 'Domingo'
-        }
-        df_resultado["Dia da Semana"] = df_resultado["Data"].dt.day_name().map(dias_pt)
+        if has_saidas:
+            tempo_fora = []
+
+            # Substituir valores para padronizar
+            df['Status_Normalizado'] = df['Entered/Exited Status'].apply(
+                lambda x: 'SAIDA' if x in saida_vals else ('ENTRADA' if x in entrada_vals else x)
+            )
+
+            for pessoa, grupo in df.groupby('Person'):
+                total_horas = 0
+                stack = []
+                for _, row in grupo.sort_values('Time').iterrows():
+                    if row['Status_Normalizado'] == 'SAIDA':
+                        stack.append(row['Time'])
+                    elif row['Status_Normalizado'] == 'ENTRADA' and stack:
+                        saida = stack.pop()
+                        delta = row['Time'] - saida
+                        total_horas += delta.total_seconds() / 3600
+                tempo_fora.append({'Person': pessoa, 'Tempo Fora (h)': total_horas})
+
+            df_resultado = pd.DataFrame(tempo_fora, columns=['Person', 'Tempo Fora (h)'])
+            st.subheader("🏆 Ranking - Quem mais ficou fora do galpão")
+            df_ranking = df_resultado.sort_values('Tempo Fora (h)', ascending=False)
+            fig_rank = px.bar(
+                df_ranking,
+                x="Person",
+                y="Tempo Fora (h)",
+                text="Tempo Fora (h)",
+                color="Tempo Fora (h)",
+                color_continuous_scale="Reds",
+            )
+            fig_rank.update_traces(texttemplate='%{text:.2f}h', textposition="outside")
+            fig_rank.update_layout(yaxis_title="Horas Fora", xaxis_title="Pessoa")
+            st.plotly_chart(fig_rank, use_container_width=True)
+
+            # ================================
+            # Gráfico de Tempo Fora por Dia da Semana real
+            # ================================
+            df_saidas = df[df['Status_Normalizado'] == 'SAIDA'].copy()
+            df_saidas['Dia da Semana'] = df_saidas['Time'].dt.day_name()
+            dias_pt = {
+                'Monday': 'Segunda-feira',
+                'Tuesday': 'Terça-feira',
+                'Wednesday': 'Quarta-feira',
+                'Thursday': 'Quinta-feira',
+                'Friday': 'Sexta-feira',
+                'Saturday': 'Sábado',
+                'Sunday': 'Domingo'
+            }
+            df_saidas['Dia da Semana'] = df_saidas['Dia da Semana'].map(dias_pt)
+
+            df_semana_todos = df_saidas.groupby(['Person', 'Dia da Semana'], as_index=False).size().rename(columns={'size':'Saídas'})
+            fig_semana_todos = px.bar(
+                df_semana_todos,
+                x="Dia da Semana",
+                y="Saídas",
+                color="Person",
+                barmode="group",
+                text="Saídas"
+            )
+            fig_semana_todos.update_traces(texttemplate='%{text}', textposition="outside")
+            fig_semana_todos.update_layout(yaxis_title="Saídas", xaxis_title="Dia da Semana")
+            st.subheader("📊 Saídas por pessoa por dia da semana")
+            st.plotly_chart(fig_semana_todos, use_container_width=True)
 
         # ================================
-        # 3️⃣ Ranking geral (todas as pessoas)
+        # 3️⃣ Relatório de entradas (sempre)
         # ================================
-        df_ranking = df_resultado.sort_values('Tempo Fora (h)', ascending=False)
-        st.subheader("🏆 Ranking - Quem mais fica fora do galpão")
-        fig_rank = px.bar(
-            df_ranking,
-            x="Person",
-            y="Tempo Fora (h)",
-            text="Tempo Fora (h)",
-            color="Tempo Fora (h)",
-            color_continuous_scale="Reds",
+        st.subheader("📊 Entradas por pessoa")
+        df_entradas = df[df['Entered/Exited Status'].isin(entrada_vals)]
+        df_entradas['Dia da Semana'] = df_entradas['Time'].dt.day_name().map(dias_pt)
+        entradas_por_pessoa = df_entradas.groupby(['Person','Dia da Semana'], as_index=False).size().rename(columns={'size':'Quantidade de Entradas'})
+
+        fig_entradas = px.bar(
+            entradas_por_pessoa,
+            x='Dia da Semana',
+            y='Quantidade de Entradas',
+            color='Person',
+            barmode='group',
+            text='Quantidade de Entradas'
         )
-        fig_rank.update_traces(texttemplate='%{text:.2f}h', textposition="outside")
-        fig_rank.update_layout(yaxis_title="Horas Fora", xaxis_title="Pessoa")
-        st.plotly_chart(fig_rank, use_container_width=True)
+        fig_entradas.update_traces(texttemplate='%{text}', textposition='outside')
+        fig_entradas.update_layout(yaxis_title="Entradas", xaxis_title="Dia da Semana")
+        st.plotly_chart(fig_entradas, use_container_width=True)
 
-        # ================================
-        # 4️⃣ Detalhe por dia da semana (filtrando uma pessoa)
-        # ================================
-        st.subheader("📊 Detalhe - Tempo fora por dia da semana")
-        pessoa_selecionada = st.selectbox("Selecione uma pessoa:", df_ranking["Person"].unique())
-
-        df_detalhe_semana = (
-            df_resultado[df_resultado["Person"] == pessoa_selecionada]
-            .groupby("Dia da Semana", as_index=False)["Tempo Fora (h)"]
-            .sum()
-            .sort_values(by="Tempo Fora (h)", ascending=False)
-        )
-
-        fig_semana = px.bar(
-            df_detalhe_semana,
-            x="Dia da Semana",
-            y="Tempo Fora (h)",
-            text="Tempo Fora (h)",
-            color="Tempo Fora (h)",
-            color_continuous_scale="Blues",
-        )
-        fig_semana.update_traces(texttemplate='%{text:.2f}h', textposition="outside")
-        fig_semana.update_layout(yaxis_title="Horas Fora", xaxis_title="Dia da Semana")
-        st.plotly_chart(fig_semana, use_container_width=True)
-
-        # ================================
-        # 5️⃣ Comparativo - Todas as pessoas por dia da semana
-        # ================================
-        st.subheader("📊 Comparativo - Todas as pessoas por dia da semana")
-        df_semana_todos = (
-            df_resultado.groupby(["Person", "Dia da Semana"], as_index=False)["Tempo Fora (h)"]
-            .sum()
-        )
-
-        fig_semana_todos = px.bar(
-            df_semana_todos,
-            x="Dia da Semana",
-            y="Tempo Fora (h)",
-            color="Person",
-            barmode="group",
-            text="Tempo Fora (h)"
-        )
-        fig_semana_todos.update_traces(texttemplate='%{text:.1f}h', textposition="outside")
-        fig_semana_todos.update_layout(yaxis_title="Horas Fora", xaxis_title="Dia da Semana")
-        st.plotly_chart(fig_semana_todos, use_container_width=True)
+        # Mostrar horários de entrada detalhados
+        st.subheader("🕒 Horários de entrada")
+        pessoa_selecionada = st.selectbox("Selecione uma pessoa para ver horários de entrada:", df['Person'].unique())
+        horarios = df_entradas[df_entradas['Person'] == pessoa_selecionada][['Time']].sort_values('Time')
+        st.dataframe(horarios)
 
     except Exception as e:
         st.error(f"Erro ao processar o arquivo: {e}")
