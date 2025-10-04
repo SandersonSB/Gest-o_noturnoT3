@@ -22,7 +22,7 @@ if uploaded_file is not None:
         df['Time'] = pd.to_datetime(df['Time'], errors='coerce')
 
         # ================================
-        # 2️⃣ Determinar evento real baseado em Access Point
+        # 2️⃣ Detectar evento real baseado em Access Point
         # ================================
         def detectar_evento(access_point):
             ap = str(access_point).lower()
@@ -64,7 +64,7 @@ if uploaded_file is not None:
         df_tempo_fora = df_tempo_fora.sort_values('Tempo Fora (h)', ascending=False)
 
         # ================================
-        # 4️⃣ Ranking em barra
+        # 4️⃣ Gráfico de ranking (barra)
         # ================================
         st.subheader("🏆 Ranking - Quem mais ficou fora do galpão")
         fig_bar = px.bar(
@@ -93,7 +93,58 @@ if uploaded_file is not None:
         st.plotly_chart(fig_pizza, use_container_width=True)
 
         # ================================
-        # 6️⃣ Mostrar tabela completa
+        # 6️⃣ Gráfico interativo por pessoa: tempo fora por dia da semana
+        # ================================
+        st.subheader("📊 Tempo Fora por Dia da Semana")
+        pessoa_selecionada = st.selectbox("Selecione uma pessoa:", df_tempo_fora['Person'])
+
+        # Filtrar registros da pessoa
+        grupo_pessoa = df[df['Person'] == pessoa_selecionada].sort_values('Time')
+        stack = []
+        tempos_por_dia = []
+
+        for _, row in grupo_pessoa.iterrows():
+            if row['Evento'] == 'SAIDA':
+                stack.append(row['Time'])
+            elif row['Evento'] == 'ENTRADA' and stack:
+                saida = stack.pop()
+                delta = row['Time'] - saida
+                tempos_por_dia.append({'Dia': saida.date(), 'Horas Fora': delta.total_seconds()/3600})
+
+        if tempos_por_dia:
+            df_dias = pd.DataFrame(tempos_por_dia)
+            df_dias['Dia da Semana'] = pd.to_datetime(df_dias['Dia']).dt.day_name()
+            dias_pt = {
+                'Monday': 'Segunda-feira',
+                'Tuesday': 'Terça-feira',
+                'Wednesday': 'Quarta-feira',
+                'Thursday': 'Quinta-feira',
+                'Friday': 'Sexta-feira',
+                'Saturday': 'Sábado',
+                'Sunday': 'Domingo'
+            }
+            df_dias['Dia da Semana'] = df_dias['Dia da Semana'].map(dias_pt)
+
+            # Agrupar por dia da semana
+            df_dias_agg = df_dias.groupby('Dia da Semana', as_index=False)['Horas Fora'].sum()
+
+            # Gráfico de barras
+            fig_dia_semana = px.bar(
+                df_dias_agg,
+                x='Dia da Semana',
+                y='Horas Fora',
+                text='Horas Fora',
+                color='Horas Fora',
+                color_continuous_scale='Blues'
+            )
+            fig_dia_semana.update_traces(texttemplate='%{text:.2f}h', textposition='outside')
+            fig_dia_semana.update_layout(yaxis_title="Horas Fora", xaxis_title="Dia da Semana")
+            st.plotly_chart(fig_dia_semana, use_container_width=True)
+        else:
+            st.info("Não há registros suficientes de saída/entrada para calcular o tempo fora desta pessoa.")
+
+        # ================================
+        # 7️⃣ Tabela detalhada (opcional)
         # ================================
         st.subheader("📋 Tempo Fora detalhado por pessoa")
         st.dataframe(df_tempo_fora.reset_index(drop=True))
