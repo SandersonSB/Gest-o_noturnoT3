@@ -1,6 +1,7 @@
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from io import BytesIO
 
 st.set_page_config(page_title="Ranking Tempo Fora do Galpão", layout="wide")
 st.title("📊 Ranking de Tempo Fora do Galpão")
@@ -35,21 +36,20 @@ if uploaded_file is not None:
         # ================================
         def detectar_evento(access_point):
             ap = str(access_point).lower()
-            if 'entrada' in ap:
-                return 'ENTRADA'
-            elif 'saida' in ap or 'saída' in ap:
-                return 'SAIDA'
+            if "portaria" in ap:
+                if "entrada" in ap:
+                    return "ENTRADA_PORTARIA"
+                elif "saida" in ap or "saída" in ap:
+                    return "SAIDA_PORTARIA"
+            elif "galpao" in ap or "galpão" in ap:
+                if "entrada" in ap:
+                    return "ENTRADA_GALPAO"
+                elif "saida" in ap or "saída" in ap:
+                    return "SAIDA_GALPAO"
             else:
-                return 'DESCONHECIDO'
+                return "OUTRO"
 
         df['Evento'] = df['Access Point'].apply(detectar_evento)
-
-        # Filtrar apenas entradas e saídas válidas
-        df = df[df['Evento'].isin(['ENTRADA','SAIDA'])]
-
-        if df.empty:
-            st.warning("⚠️ Nenhuma entrada ou saída válida detectada no arquivo.")
-            st.stop()
 
         # ================================
         # 3️⃣ Calcular Tempo Fora por pessoa
@@ -58,15 +58,30 @@ if uploaded_file is not None:
 
         for pessoa, grupo in df.groupby('Person'):
             grupo = grupo.sort_values('Time')
-            stack = []
             total_horas = 0
+            inicio_fora = None
+            dentro_empresa = False
+
             for _, row in grupo.iterrows():
-                if row['Evento'] == 'SAIDA':
-                    stack.append(row['Time'])
-                elif row['Evento'] == 'ENTRADA' and stack:
-                    saida = stack.pop()
-                    delta = row['Time'] - saida
+                ev = row['Evento']
+
+                if ev == "ENTRADA_PORTARIA":
+                    dentro_empresa = True
+                elif ev == "ENTRADA_GALPAO" and inicio_fora:
+                    delta = row['Time'] - inicio_fora
                     total_horas += delta.total_seconds() / 3600
+                    inicio_fora = None
+                elif ev == "SAIDA_GALPAO" and dentro_empresa:
+                    inicio_fora = row['Time']
+                elif ev == "SAIDA_PORTARIA":
+                    dentro_empresa = False
+                    inicio_fora = None
+
+            # Descontar almoço fixo (1h20 por dia)
+            dias = grupo['Time'].dt.date.nunique()
+            desconto = dias * (1 + 20/60)
+            total_horas = max(0, total_horas - desconto)
+
             tempo_fora_lista.append({'Person': pessoa, 'Tempo Fora (h)': total_horas})
 
         df_tempo_fora = pd.DataFrame(tempo_fora_lista)
@@ -110,18 +125,25 @@ if uploaded_file is not None:
         st.subheader("📊 Tempo Fora por Dia da Semana")
         pessoa_selecionada = st.selectbox("Selecione uma pessoa:", df_tempo_fora['Person'])
 
-        # Filtrar registros da pessoa
         grupo_pessoa = df[df['Person'] == pessoa_selecionada].sort_values('Time')
         stack = []
         tempos_por_dia = []
 
+        dentro_empresa = False
+        inicio_fora = None
         for _, row in grupo_pessoa.iterrows():
-            if row['Evento'] == 'SAIDA':
-                stack.append(row['Time'])
-            elif row['Evento'] == 'ENTRADA' and stack:
-                saida = stack.pop()
-                delta = row['Time'] - saida
-                tempos_por_dia.append({'Dia': saida.date(), 'Horas Fora': delta.total_seconds()/3600})
+            ev = row['Evento']
+            if ev == "ENTRADA_PORTARIA":
+                dentro_empresa = True
+            elif ev == "ENTRADA_GALPAO" and inicio_fora:
+                delta = row['Time'] - inicio_fora
+                tempos_por_dia.append({'Dia': inicio_fora.date(), 'Horas Fora': delta.total_seconds()/3600})
+                inicio_fora = None
+            elif ev == "SAIDA_GALPAO" and dentro_empresa:
+                inicio_fora = row['Time']
+            elif ev == "SAIDA_PORTARIA":
+                dentro_empresa = False
+                inicio_fora = None
 
         if tempos_por_dia:
             df_dias = pd.DataFrame(tempos_por_dia)
@@ -137,16 +159,13 @@ if uploaded_file is not None:
             }
             df_dias['Dia da Semana'] = df_dias['Dia da Semana'].map(dias_pt)
 
-            # Agrupar por dia da semana
             df_dias_agg = df_dias.groupby('Dia da Semana', as_index=False)['Horas Fora'].sum()
             df_dias_agg['Tempo Fora (HH:MM)'] = df_dias_agg['Horas Fora'].apply(formatar_horas)
 
-            # Ordenar dias da semana corretamente
             ordem_dias = ['Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado','Domingo']
             df_dias_agg['Dia da Semana'] = pd.Categorical(df_dias_agg['Dia da Semana'], categories=ordem_dias, ordered=True)
             df_dias_agg = df_dias_agg.sort_values('Dia da Semana')
 
-            # Gráfico de barras
             fig_dia_semana = px.bar(
                 df_dias_agg,
                 x='Dia da Semana',
@@ -162,10 +181,68 @@ if uploaded_file is not None:
             st.info("Não há registros suficientes de saída/entrada para calcular o tempo fora desta pessoa.")
 
         # ================================
-        # 7️⃣ Tabela detalhada
+        # 7️⃣ Tabela resumida
         # ================================
         st.subheader("📋 Tempo Fora detalhado por pessoa")
         st.dataframe(df_tempo_fora[['Person','Tempo Fora (HH:MM)']].reset_index(drop=True))
+
+        # ================================
+        # 8️⃣ DataFrame detalhado por pessoa, data e dia da semana
+        # ================================
+        detalhes_lista = []
+
+        for pessoa, grupo in df.groupby('Person'):
+            grupo = grupo.sort_values('Time')
+            dentro_empresa = False
+            inicio_fora = None
+
+            for _, row in grupo.iterrows():
+                ev = row['Evento']
+                if ev == "ENTRADA_PORTARIA":
+                    dentro_empresa = True
+                elif ev == "ENTRADA_GALPAO" and inicio_fora:
+                    delta = row['Time'] - inicio_fora
+                    detalhes_lista.append({
+                        "Person": pessoa,
+                        "Data": inicio_fora.date(),
+                        "Dia da Semana": inicio_fora.strftime("%A"),
+                        "Início Fora": inicio_fora,
+                        "Fim Fora": row['Time'],
+                        "Horas Fora": delta.total_seconds() / 3600
+                    })
+                    inicio_fora = None
+                elif ev == "SAIDA_GALPAO" and dentro_empresa:
+                    inicio_fora = row['Time']
+                elif ev == "SAIDA_PORTARIA":
+                    dentro_empresa = False
+                    inicio_fora = None
+
+        df_detalhado = pd.DataFrame(detalhes_lista)
+
+        dias_pt = {
+            'Monday': 'Segunda-feira',
+            'Tuesday': 'Terça-feira',
+            'Wednesday': 'Quarta-feira',
+            'Thursday': 'Quinta-feira',
+            'Friday': 'Sexta-feira',
+            'Saturday': 'Sábado',
+            'Sunday': 'Domingo'
+        }
+        df_detalhado['Dia da Semana'] = df_detalhado['Dia da Semana'].map(dias_pt)
+
+        st.subheader("📑 Detalhamento - Intervalos fora do galpão")
+        st.dataframe(df_detalhado)
+
+        # Botão de download em Excel
+        buffer = BytesIO()
+        df_detalhado.to_excel(buffer, index=False, engine='openpyxl')
+        buffer.seek(0)
+        st.download_button(
+            label="📥 Baixar detalhamento em Excel",
+            data=buffer,
+            file_name="tempo_fora_detalhado.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
     except Exception as e:
         st.error(f"Erro ao processar o arquivo: {e}")
