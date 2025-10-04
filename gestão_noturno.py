@@ -3,7 +3,6 @@ import plotly.express as px
 import streamlit as st
 
 st.set_page_config(page_title="Análise de Tempo Fora do Galpão", layout="wide")
-
 st.title("📊 Análise de Tempo Fora do Galpão")
 
 # ================================
@@ -19,8 +18,8 @@ if uploaded_file is not None:
         else:
             df = pd.read_excel(uploaded_file)
 
-        # Converter coluna Time para datetime
-        df['Time'] = pd.to_datetime(df['Time'])
+        # Converter Time para datetime
+        df['Time'] = pd.to_datetime(df['Time'], errors='coerce')
 
         # Filtrar apenas eventos de Entrada e Saída
         df = df[df['Entered/Exited Status'].isin(['Entered', 'Exited'])]
@@ -28,7 +27,9 @@ if uploaded_file is not None:
         # Ordenar por Pessoa e Horário
         df = df.sort_values(['Person', 'Time'])
 
-        # Calcular Tempo Fora (h) por pessoa
+        # ================================
+        # 2️⃣ Calcular Tempo Fora (h) por pessoa
+        # ================================
         tempo_fora = []
 
         for pessoa, grupo in df.groupby('Person'):
@@ -43,9 +44,14 @@ if uploaded_file is not None:
                     total_horas += delta.total_seconds() / 3600
             tempo_fora.append({'Person': pessoa, 'Tempo Fora (h)': total_horas})
 
-        df_resultado = pd.DataFrame(tempo_fora)
+        df_resultado = pd.DataFrame(tempo_fora, columns=['Person', 'Tempo Fora (h)'])
 
-        # Adicionar Data fictícia (para compatibilidade com seus gráficos por dia da semana)
+        # Se não houver registros válidos
+        if df_resultado.empty:
+            st.warning("⚠️ Nenhum registro de saída encontrado para calcular o tempo fora.")
+            st.stop()
+
+        # Adicionar Data fictícia (para compatibilidade com gráficos por dia da semana)
         df_resultado['Data'] = pd.Timestamp.today()
 
         # Criar coluna Dia da Semana em português
@@ -61,10 +67,9 @@ if uploaded_file is not None:
         df_resultado["Dia da Semana"] = df_resultado["Data"].dt.day_name().map(dias_pt)
 
         # ================================
-        # 2️⃣ Ranking geral (todas as pessoas)
+        # 3️⃣ Ranking geral (todas as pessoas)
         # ================================
         df_ranking = df_resultado.sort_values('Tempo Fora (h)', ascending=False)
-
         st.subheader("🏆 Ranking - Quem mais fica fora do galpão")
         fig_rank = px.bar(
             df_ranking,
@@ -79,7 +84,7 @@ if uploaded_file is not None:
         st.plotly_chart(fig_rank, use_container_width=True)
 
         # ================================
-        # 3️⃣ Detalhe por dia da semana (filtrando uma pessoa)
+        # 4️⃣ Detalhe por dia da semana (filtrando uma pessoa)
         # ================================
         st.subheader("📊 Detalhe - Tempo fora por dia da semana")
         pessoa_selecionada = st.selectbox("Selecione uma pessoa:", df_ranking["Person"].unique())
@@ -104,10 +109,9 @@ if uploaded_file is not None:
         st.plotly_chart(fig_semana, use_container_width=True)
 
         # ================================
-        # 4️⃣ Comparativo - Todas as pessoas por dia da semana
+        # 5️⃣ Comparativo - Todas as pessoas por dia da semana
         # ================================
         st.subheader("📊 Comparativo - Todas as pessoas por dia da semana")
-
         df_semana_todos = (
             df_resultado.groupby(["Person", "Dia da Semana"], as_index=False)["Tempo Fora (h)"]
             .sum()
