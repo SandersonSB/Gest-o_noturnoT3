@@ -3,11 +3,14 @@ import plotly.express as px
 import streamlit as st
 from io import BytesIO
 
-st.set_page_config(page_title="Ranking Tempo Fora do Galpão", layout="wide")
-st.title("📊 Ranking de Tempo Fora do Galpão")
+# ================================
+# CONFIGURAÇÃO INICIAL DO APP
+# ================================
+st.set_page_config(page_title="Análise de Tempo - Galpão", layout="wide")
+st.title("📊 Análise de Tempo Dentro e Fora do Galpão")
 
 # ================================
-# Função utilitária: formata horas decimais em HH:MM
+# Função auxiliar: formatar horas em HH:MM
 # ================================
 def formatar_horas(horas_decimais):
     total_segundos = int(horas_decimais * 3600)
@@ -16,13 +19,18 @@ def formatar_horas(horas_decimais):
     return f"{h:02d}:{m:02d}"
 
 # ================================
-# 1️⃣ Upload do arquivo CSV ou Excel
+# Configuração de almoço
 # ================================
-uploaded_file = st.file_uploader("📂 Envie a planilha de entrada/saída", type=["xlsx", "csv"])
+tempo_almoco = 1 + 20/60  # 1h20 = 1 + 20/60 horas
+
+# ================================
+# Upload do arquivo
+# ================================
+uploaded_file = st.file_uploader("📂 Envie o arquivo Excel ou CSV", type=["xlsx", "csv"])
 
 if uploaded_file is not None:
     try:
-        # Leitura do arquivo
+        # Ler o arquivo
         if uploaded_file.name.endswith(".csv"):
             df = pd.read_csv(uploaded_file)
         else:
@@ -32,7 +40,7 @@ if uploaded_file is not None:
         df['Time'] = pd.to_datetime(df['Time'], errors='coerce')
 
         # ================================
-        # 2️⃣ Detectar evento real baseado em Access Point
+        # Detectar tipo de evento
         # ================================
         def detectar_evento(access_point):
             ap = str(access_point).lower()
@@ -52,200 +60,184 @@ if uploaded_file is not None:
         df['Evento'] = df['Access Point'].apply(detectar_evento)
 
         # ================================
-        # 3️⃣ Calcular Tempo Fora por pessoa
+        # Cálculo do tempo por pessoa e dia
         # ================================
-        tempo_fora_lista = []
+        resultados = []
 
-        for pessoa, grupo in df.groupby('Person'):
-            grupo = grupo.sort_values('Time')
-            total_horas = 0
-            inicio_fora = None
-            dentro_empresa = False
+        for pessoa, grupo_pessoa in df.groupby('Person'):
+            grupo_pessoa = grupo_pessoa.sort_values('Time')
+            grupo_pessoa['Data'] = grupo_pessoa['Time'].dt.date
 
-            for _, row in grupo.iterrows():
-                ev = row['Evento']
+            for data, grupo_dia in grupo_pessoa.groupby('Data'):
+                grupo_dia = grupo_dia.sort_values('Time')
 
-                if ev == "ENTRADA_PORTARIA":
-                    dentro_empresa = True
-                elif ev == "ENTRADA_GALPAO" and inicio_fora:
-                    delta = row['Time'] - inicio_fora
-                    total_horas += delta.total_seconds() / 3600
-                    inicio_fora = None
-                elif ev == "SAIDA_GALPAO" and dentro_empresa:
-                    inicio_fora = row['Time']
-                elif ev == "SAIDA_PORTARIA":
-                    dentro_empresa = False
-                    inicio_fora = None
+                # --- Tempo total na empresa (portaria)
+                entradas_portaria = grupo_dia[grupo_dia['Evento'] == 'ENTRADA_PORTARIA']['Time']
+                saidas_portaria = grupo_dia[grupo_dia['Evento'] == 'SAIDA_PORTARIA']['Time']
+                if not entradas_portaria.empty and not saidas_portaria.empty:
+                    entrada_portaria = entradas_portaria.iloc[0]
+                    saida_portaria = saidas_portaria.iloc[-1]
+                    tempo_empresa = (saida_portaria - entrada_portaria).total_seconds() / 3600
+                else:
+                    tempo_empresa = 0
 
-            # Descontar almoço fixo (1h20 por dia)
-            dias = grupo['Time'].dt.date.nunique()
-            desconto = dias * (1 + 20/60)
-            total_horas = max(0, total_horas - desconto)
+                # --- Tempo dentro do galpão
+                entradas_galpao = grupo_dia[grupo_dia['Evento'] == 'ENTRADA_GALPAO']['Time'].tolist()
+                saidas_galpao = grupo_dia[grupo_dia['Evento'] == 'SAIDA_GALPAO']['Time'].tolist()
 
-            tempo_fora_lista.append({'Person': pessoa, 'Tempo Fora (h)': total_horas})
+                tempo_galpao = 0
+                for ent, sai in zip(entradas_galpao, saidas_galpao):
+                    if ent is not None and sai is not None and sai > ent:
+                        delta = (sai - ent).total_seconds() / 3600
+                        tempo_galpao += delta
 
-        df_tempo_fora = pd.DataFrame(tempo_fora_lista)
-        df_tempo_fora['Tempo Fora (HH:MM)'] = df_tempo_fora['Tempo Fora (h)'].apply(formatar_horas)
-        df_tempo_fora = df_tempo_fora.sort_values('Tempo Fora (h)', ascending=False)
+                # --- Tempo fora do galpão (somando todos os intervalos entre saída e próxima entrada)
+                tempo_fora = 0
+                entradas_galpao.sort()
+                saidas_galpao.sort()
+                for i in range(len(saidas_galpao)):
+                    sai = saidas_galpao[i]
+                    if i + 1 < len(entradas_galpao):
+                        proxima_ent = entradas_galpao[i + 1]
+                        if proxima_ent > sai:
+                            delta = (proxima_ent - sai).total_seconds() / 3600
+                            tempo_fora += delta
+                # Subtrai almoço apenas uma vez no final do dia
+                tempo_fora = max(0, tempo_fora - tempo_almoco)
+
+                resultados.append({
+                    'Pessoa': pessoa,
+                    'Data': data,
+                    'Tempo na Empresa (h)': tempo_empresa,
+                    'Tempo no Galpão (h)': tempo_galpao,
+                    'Tempo Fora do Galpão (h)': tempo_fora
+                })
+
+        df_result = pd.DataFrame(resultados)
 
         # ================================
-        # 4️⃣ Gráfico de ranking (barra)
+        # Limpeza e resumo por pessoa
         # ================================
-        st.subheader("🏆 Ranking - Quem mais ficou fora do galpão")
+        df_validos = df_result[df_result['Tempo na Empresa (h)'] > 0].copy()
+
+        df_resumo = df_validos.groupby('Pessoa', as_index=False)[
+            ['Tempo na Empresa (h)', 'Tempo no Galpão (h)', 'Tempo Fora do Galpão (h)']
+        ].sum()
+
+        # Adiciona colunas em HH:MM
+        df_result['Tempo na Empresa (HH:MM)'] = df_result['Tempo na Empresa (h)'].apply(formatar_horas)
+        df_result['Tempo no Galpão (HH:MM)'] = df_result['Tempo no Galpão (h)'].apply(formatar_horas)
+        df_result['Tempo Fora (HH:MM)'] = df_result['Tempo Fora do Galpão (h)'].apply(formatar_horas)
+
+        # ================================
+        # 1️⃣ Ranking de Tempo Fora do Galpão
+        # ================================
+        st.subheader("🏆 Ranking - Tempo Dentro e Fora do Galpão")
+
+        df_rank = df_resumo.sort_values('Tempo Fora do Galpão (h)', ascending=False)
+        df_rank['Tempo Dentro (HH:MM)'] = df_rank['Tempo no Galpão (h)'].apply(formatar_horas)
+        df_rank['Tempo Fora (HH:MM)'] = df_rank['Tempo Fora do Galpão (h)'].apply(formatar_horas)
+
         fig_bar = px.bar(
-            df_tempo_fora,
-            x='Person',
-            y='Tempo Fora (h)',
-            text='Tempo Fora (HH:MM)',
-            color='Tempo Fora (h)',
-            color_continuous_scale='Reds'
+            df_rank,
+            x='Pessoa',
+            y=['Tempo no Galpão (h)', 'Tempo Fora do Galpão (h)'],
+            barmode='stack',
+            title="Tempo Total Dentro vs Fora do Galpão",
+            labels={"value": "Horas", "variable": "Categoria"},
+            color_discrete_sequence=['#4CAF50', '#F44336']
         )
-        fig_bar.update_traces(textposition='outside')
-        fig_bar.update_layout(yaxis_title="Horas Fora", xaxis_title="Pessoa")
         st.plotly_chart(fig_bar, use_container_width=True)
 
         # ================================
-        # 5️⃣ Gráfico de pizza
+        # 2️⃣ Pizza de proporção total
         # ================================
-        st.subheader("📊 Participação no Tempo Fora")
+        st.subheader("📊 Proporção Geral - Dentro vs Fora do Galpão")
+
+        total_dentro = df_resumo['Tempo no Galpão (h)'].sum()
+        total_fora = df_resumo['Tempo Fora do Galpão (h)'].sum()
+
+        df_pizza = pd.DataFrame({
+            'Categoria': ['Dentro do Galpão', 'Fora do Galpão'],
+            'Horas': [total_dentro, total_fora]
+        })
+
         fig_pizza = px.pie(
-            df_tempo_fora,
-            names='Person',
-            values='Tempo Fora (h)',
-            hole=0.4,
-            color_discrete_sequence=px.colors.qualitative.Pastel,
-            hover_data=['Tempo Fora (HH:MM)']
+            df_pizza,
+            names='Categoria',
+            values='Horas',
+            color='Categoria',
+            color_discrete_sequence=['#4CAF50', '#F44336'],
+            hole=0.4
         )
-        fig_pizza.update_traces(text=df_tempo_fora['Tempo Fora (HH:MM)'])
         st.plotly_chart(fig_pizza, use_container_width=True)
 
         # ================================
-        # 6️⃣ Gráfico interativo por pessoa: tempo fora por dia da semana
+        # 3️⃣ Gráfico diário por pessoa
         # ================================
-        st.subheader("📊 Tempo Fora por Dia da Semana")
-        pessoa_selecionada = st.selectbox("Selecione uma pessoa:", df_tempo_fora['Person'])
+        st.subheader("📅 Tempo por Dia - Selecione uma pessoa")
+        pessoa_sel = st.selectbox("Escolha o nome:", df_validos['Pessoa'].unique())
 
-        grupo_pessoa = df[df['Person'] == pessoa_selecionada].sort_values('Time')
-        stack = []
-        tempos_por_dia = []
+        df_pessoa = df_validos[df_validos['Pessoa'] == pessoa_sel]
+        df_pessoa['Tempo na Empresa (HH:MM)'] = df_pessoa['Tempo na Empresa (h)'].apply(formatar_horas)
+        df_pessoa['Tempo no Galpão (HH:MM)'] = df_pessoa['Tempo no Galpão (h)'].apply(formatar_horas)
+        df_pessoa['Tempo Fora (HH:MM)'] = df_pessoa['Tempo Fora do Galpão (h)'].apply(formatar_horas)
 
-        dentro_empresa = False
-        inicio_fora = None
-        for _, row in grupo_pessoa.iterrows():
-            ev = row['Evento']
-            if ev == "ENTRADA_PORTARIA":
-                dentro_empresa = True
-            elif ev == "ENTRADA_GALPAO" and inicio_fora:
-                delta = row['Time'] - inicio_fora
-                tempos_por_dia.append({'Dia': inicio_fora.date(), 'Horas Fora': delta.total_seconds()/3600})
-                inicio_fora = None
-            elif ev == "SAIDA_GALPAO" and dentro_empresa:
-                inicio_fora = row['Time']
-            elif ev == "SAIDA_PORTARIA":
-                dentro_empresa = False
-                inicio_fora = None
-
-        if tempos_por_dia:
-            df_dias = pd.DataFrame(tempos_por_dia)
-            df_dias['Dia da Semana'] = pd.to_datetime(df_dias['Dia']).dt.day_name()
-            dias_pt = {
-                'Monday': 'Segunda-feira',
-                'Tuesday': 'Terça-feira',
-                'Wednesday': 'Quarta-feira',
-                'Thursday': 'Quinta-feira',
-                'Friday': 'Sexta-feira',
-                'Saturday': 'Sábado',
-                'Sunday': 'Domingo'
-            }
-            df_dias['Dia da Semana'] = df_dias['Dia da Semana'].map(dias_pt)
-
-            df_dias_agg = df_dias.groupby('Dia da Semana', as_index=False)['Horas Fora'].sum()
-            df_dias_agg['Tempo Fora (HH:MM)'] = df_dias_agg['Horas Fora'].apply(formatar_horas)
-
-            ordem_dias = ['Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado','Domingo']
-            df_dias_agg['Dia da Semana'] = pd.Categorical(df_dias_agg['Dia da Semana'], categories=ordem_dias, ordered=True)
-            df_dias_agg = df_dias_agg.sort_values('Dia da Semana')
-
-            fig_dia_semana = px.bar(
-                df_dias_agg,
-                x='Dia da Semana',
-                y='Horas Fora',
-                text='Tempo Fora (HH:MM)',
-                color='Horas Fora',
-                color_continuous_scale='Blues'
-            )
-            fig_dia_semana.update_traces(textposition='outside')
-            fig_dia_semana.update_layout(yaxis_title="Horas Fora", xaxis_title="Dia da Semana")
-            st.plotly_chart(fig_dia_semana, use_container_width=True)
-        else:
-            st.info("Não há registros suficientes de saída/entrada para calcular o tempo fora desta pessoa.")
+        fig_dia = px.bar(
+            df_pessoa,
+            x='Data',
+            y=['Tempo no Galpão (h)', 'Tempo Fora do Galpão (h)'],
+            barmode='stack',
+            color_discrete_sequence=['#4CAF50', '#F44336'],
+            labels={"value": "Horas", "variable": "Categoria"},
+            title=f"Tempo Diário de {pessoa_sel}"
+        )
+        st.plotly_chart(fig_dia, use_container_width=True)
 
         # ================================
-        # 7️⃣ Tabela resumida
+        # 4️⃣ Tabelas
         # ================================
-        st.subheader("📋 Tempo Fora detalhado por pessoa")
-        st.dataframe(df_tempo_fora[['Person','Tempo Fora (HH:MM)']].reset_index(drop=True))
+        st.subheader("📋 Resumo por Pessoa")
+        st.dataframe(df_resumo.style.format({
+            'Tempo na Empresa (h)': '{:.2f}',
+            'Tempo no Galpão (h)': '{:.2f}',
+            'Tempo Fora do Galpão (h)': '{:.2f}'
+        }))
+
+        st.subheader("📑 Detalhamento por Dia")
+        st.dataframe(df_validos)
 
         # ================================
-        # 8️⃣ DataFrame detalhado por pessoa, data e dia da semana
+        # 5️⃣ Baixar detalhamento
         # ================================
-        detalhes_lista = []
-
-        for pessoa, grupo in df.groupby('Person'):
-            grupo = grupo.sort_values('Time')
-            dentro_empresa = False
-            inicio_fora = None
-
-            for _, row in grupo.iterrows():
-                ev = row['Evento']
-                if ev == "ENTRADA_PORTARIA":
-                    dentro_empresa = True
-                elif ev == "ENTRADA_GALPAO" and inicio_fora:
-                    delta = row['Time'] - inicio_fora
-                    detalhes_lista.append({
-                        "Person": pessoa,
-                        "Data": inicio_fora.date(),
-                        "Dia da Semana": inicio_fora.strftime("%A"),
-                        "Início Fora": inicio_fora,
-                        "Fim Fora": row['Time'],
-                        "Horas Fora": delta.total_seconds() / 3600
-                    })
-                    inicio_fora = None
-                elif ev == "SAIDA_GALPAO" and dentro_empresa:
-                    inicio_fora = row['Time']
-                elif ev == "SAIDA_PORTARIA":
-                    dentro_empresa = False
-                    inicio_fora = None
-
-        df_detalhado = pd.DataFrame(detalhes_lista)
-
-        dias_pt = {
-            'Monday': 'Segunda-feira',
-            'Tuesday': 'Terça-feira',
-            'Wednesday': 'Quarta-feira',
-            'Thursday': 'Quinta-feira',
-            'Friday': 'Sexta-feira',
-            'Saturday': 'Sábado',
-            'Sunday': 'Domingo'
-        }
-        df_detalhado['Dia da Semana'] = df_detalhado['Dia da Semana'].map(dias_pt)
-
-        st.subheader("📑 Detalhamento - Intervalos fora do galpão")
-        st.dataframe(df_detalhado)
-
-        # Botão de download em Excel
         buffer = BytesIO()
-        df_detalhado.to_excel(buffer, index=False, engine='openpyxl')
+        df_validos.to_excel(buffer, index=False, engine='openpyxl')
         buffer.seek(0)
         st.download_button(
-            label="📥 Baixar detalhamento em Excel",
+            label="📥 Baixar Detalhamento (Excel)",
             data=buffer,
-            file_name="tempo_fora_detalhado.xlsx",
+            file_name="tempo_detalhado_galpao.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
+        # ================================
+        # 6️⃣ Inconsistências
+        # ================================
+        inconsistencias = []
+        for pessoa, grupo in df.groupby('Person'):
+            grupo['Data'] = grupo['Time'].dt.date
+            for data, g in grupo.groupby('Data'):
+                eventos = g['Evento'].unique().tolist()
+                if 'ENTRADA_PORTARIA' not in eventos or 'SAIDA_PORTARIA' not in eventos:
+                    inconsistencias.append({'Pessoa': pessoa, 'Data': data, 'Eventos Encontrados': eventos})
+
+        df_inconsistencias = pd.DataFrame(inconsistencias)
+        if not df_inconsistencias.empty:
+            st.subheader("⚠️ Dias com Dados Incompletos (sem entrada ou saída na portaria)")
+            st.dataframe(df_inconsistencias)
+
     except Exception as e:
-        st.error(f"Erro ao processar o arquivo: {e}")
+        st.error(f"❌ Erro ao processar o arquivo: {e}")
 
 else:
-    st.info("⬆️ Por favor, envie o arquivo Excel ou CSV para começar a análise.")
+    st.info("⬆️ Envie o arquivo Excel ou CSV para começar a análise.")
