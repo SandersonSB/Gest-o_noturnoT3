@@ -12,7 +12,7 @@ st.title("📊 Dashboard de Tempo no Galpão por Pessoa")
 # ===============================
 # Regra de almoço
 # ===============================
-tempo_almoco = 1 + 20/60  # 1h20 convertida para horas decimais
+tempo_almoco = 1 + 20/60  # 1h20 em horas decimais
 
 # ===============================
 # Upload do arquivo CSV ou Excel
@@ -163,15 +163,22 @@ if uploaded_file:
         df_result['Tempo Fora do Galpão (HH:MM)'] = df_result['Tempo Fora do Galpão (h)'].apply(formatar_horas)
 
         # ===============================
-        # Filtro por pessoa
+        # Filtro por pessoa com multiselect
         # ===============================
-        pessoas = ['Todos'] + sorted(df_result['Pessoa'].unique().tolist())
-        pessoa_sel = st.selectbox("Filtrar por pessoa:", pessoas)
+        opcoes_pessoas = sorted(df_result['Pessoa'].unique().tolist())
+        pessoa_sel = st.multiselect(
+            "Filtrar por pessoa (pode selecionar mais de uma, ou 'Todos'):", 
+            options=["Todos"] + opcoes_pessoas, 
+            default=["Todos"]
+        )
 
-        if pessoa_sel != 'Todos':
-            df_filtrado = df_result[df_result['Pessoa'] == pessoa_sel]
-        else:
+        # ===============================
+        # Lógica do filtro
+        # ===============================
+        if "Todos" in pessoa_sel:
             df_filtrado = df_result.copy()
+        else:
+            df_filtrado = df_result[df_result['Pessoa'].isin(pessoa_sel)]
 
         # ===============================
         # Gráfico: Ranking Tempo Fora
@@ -197,11 +204,12 @@ if uploaded_file:
         # Gráfico: Dia da semana mais fora
         # ===============================
         st.subheader("📅 Dia da semana que a pessoa mais fica fora do galpão")
-        if pessoa_sel != 'Todos':
+        if "Todos" not in pessoa_sel and len(pessoa_sel) == 1:
+            pessoa_unica = pessoa_sel[0]
             df_dia = df_filtrado.groupby('Dia da Semana')['Tempo Fora do Galpão (h)'].sum().reset_index()
             df_dia = df_dia.sort_values('Tempo Fora do Galpão (h)', ascending=False)
             fig_dia = px.bar(df_dia, x='Dia da Semana', y='Tempo Fora do Galpão (h)',
-                             title=f"Dias da Semana - {pessoa_sel} mais tempo fora",
+                             title=f"Dias da Semana - {pessoa_unica} mais tempo fora",
                              color='Dia da Semana', color_discrete_sequence=px.colors.qualitative.Pastel)
             st.plotly_chart(fig_dia, use_container_width=True)
 
