@@ -21,6 +21,17 @@ def formatar_horas(horas_decimais):
     m = (total_segundos % 3600) // 60
     return f"{h:02d}:{m:02d}"
 
+# Mapeamento para dia da semana em português
+dias_pt = {
+    "Monday": "Segunda-feira",
+    "Tuesday": "Terça-feira",
+    "Wednesday": "Quarta-feira",
+    "Thursday": "Quinta-feira",
+    "Friday": "Sexta-feira",
+    "Saturday": "Sábado",
+    "Sunday": "Domingo"
+}
+
 if uploaded_file:
     try:
         # Leitura do arquivo
@@ -37,7 +48,7 @@ if uploaded_file:
         df['Time'] = pd.to_datetime(df['Time'], errors='coerce')
         df = df.dropna(subset=['Time'])
         df['Data'] = df['Time'].dt.date
-        df['Dia da Semana'] = df['Time'].dt.day_name(locale='pt_BR')  # Nome do dia em português
+        df['Dia da Semana'] = df['Time'].dt.day_name().map(dias_pt)  # Converte para português
 
         resultados = []
 
@@ -107,7 +118,7 @@ if uploaded_file:
 
         st.success("✅ Processamento concluído!")
         st.download_button(
-            label="📥 Baixar Excel com horas convertidas",
+            label="📥 Baixar Excel por pessoa com horas convertidas",
             data=buffer,
             file_name="resultado_galpao_por_pessoa.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -118,5 +129,6 @@ if uploaded_file:
     except Exception as e:
         st.error("❌ Erro, anexe o relatório com colunas e formato correto.")
         st.caption(f"Detalhe técnico: {e}")
+
 else:
     st.info("⬆️ Envie o arquivo CSV ou Excel para começar a análise.")
