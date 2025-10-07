@@ -4,10 +4,50 @@ from io import BytesIO
 import plotly.express as px
 
 # ===============================
-# Configuração inicial do Streamlit
+# Configuração da página e header elegante Imile
 # ===============================
-st.set_page_config(page_title="Dashboard Tempo no Galpão", layout="wide")
-st.title("📊 Dashboard de Tempo no Galpão")
+st.set_page_config(page_title="Dashboard Imile - Tempo no Galpão", layout="wide")
+
+# HTML + CSS customizado para o cabeçalho
+st.markdown("""
+    <style>
+    .header {
+        background: linear-gradient(90deg, #004080, #FFC107); /* azul e amarelo da Imile */
+        padding: 25px;
+        border-radius: 10px;
+        color: white;
+        text-align: center;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    .header h1 {
+        margin: 0;
+        font-size: 44px;
+        font-weight: bold;
+    }
+    .header p {
+        margin: 5px 0 0 0;
+        font-size: 20px;
+        font-weight: 500;
+        color: #f9f9f9;
+    }
+    .card {
+        background-color: #f2f6fc;
+        padding: 20px;
+        border-radius: 10px;
+        margin: 20px 0;
+        box-shadow: 2px 2px 12px rgba(0,0,0,0.1);
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        color: #004080;
+    }
+    </style>
+    <div class="header">
+        <h1>IMILE</h1>
+        <p>Dashboard de Controle de Tempo no Galpão</p>
+    </div>
+    <div class="card">
+        <p>Bem-vindo ao sistema da Imile! Aqui você consegue analisar quanto tempo cada colaborador passa dentro e fora do galpão, gerar relatórios e visualizar rankings de forma clara e elegante.</p>
+    </div>
+""", unsafe_allow_html=True)
 
 # ===============================
 # Regra de almoço (1h20)
