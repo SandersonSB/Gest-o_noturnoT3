@@ -220,7 +220,7 @@ if uploaded_file:
             })
             if not df_bw.empty:
                 fig_bw = px.bar(df_bw, x='Pessoa', y=[1]*len(df_bw), color='Categoria',
-                                color_discrete_map={'Black List':'#F44336','White List':'#4CAF50'},
+                                color_discrete_map={'Black List':'#CD7F32','White List':'#FFC107'},
                                 title="Black/White List - Visualização", height=400)
                 fig_bw.update_yaxes(showticklabels=False)
                 st.plotly_chart(fig_bw, use_container_width=True)
