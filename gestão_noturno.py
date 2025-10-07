@@ -134,7 +134,7 @@ if uploaded_file:
         df_result['Tempo Fora do Galpão (HH:MM)'] = df_result['Tempo Fora do Galpão (h)'].apply(formatar_horas)
 
         # ===============================
-        # Filtro multiseleção
+        # Filtro multiseleção para aba de análise
         # ===============================
         opcoes_pessoas = sorted(df_result['Pessoa'].unique().tolist())
         pessoa_sel = st.multiselect(
@@ -190,24 +190,42 @@ if uploaded_file:
             )
 
         # ===============================
-        # Aba 2: Black/White List
+        # Aba 2: Black/White List (todos os dados, sem filtro)
         # ===============================
         with tab2:
-            media_fora = df_filtrado['Tempo Fora do Galpão (h)'].mean()
-            media_dentro = df_filtrado['Tempo Dentro do Galpão (h)'].mean()
+            st.subheader("⚫⚪ Black/White List - Todos os Dados")
+            media_fora = df_result['Tempo Fora do Galpão (h)'].mean()
+            media_dentro = df_result['Tempo Dentro do Galpão (h)'].mean()
 
-            black_candidates = df_filtrado.groupby('Pessoa')['Tempo Fora do Galpão (h)'].mean()
-            white_candidates = df_filtrado.groupby('Pessoa')['Tempo Dentro do Galpão (h)'].mean()
+            black_candidates = df_result.groupby('Pessoa')['Tempo Fora do Galpão (h)'].mean()
+            white_candidates = df_result.groupby('Pessoa')['Tempo Dentro do Galpão (h)'].mean()
 
             black_list = [p for p, t in black_candidates.items() if t > media_fora]
             white_list = [p for p, t in white_candidates.items() if t > media_dentro]
             black_list = [p for p in black_list if p not in white_list]
 
-            st.subheader("⚫ Black List e ⚪ White List")
-            st.write(f"Média de tempo fora do galpão: **{media_fora:.2f} h**")
-            st.write(f"Média de tempo dentro do galpão: **{media_dentro:.2f} h**")
-            st.write(f"⚫ Black List (mais tempo fora): {', '.join(black_list) if black_list else 'Nenhuma'}")
-            st.write(f"⚪ White List (mais tempo dentro): {', '.join(white_list) if white_list else 'Nenhuma'}")
+            # -------------------------------
+            # Mostra médias em cards
+            # -------------------------------
+            col1, col2 = st.columns(2)
+            col1.metric("Média tempo fora do galpão", f"{media_fora:.2f} h")
+            col2.metric("Média tempo dentro do galpão", f"{media_dentro:.2f} h")
+
+            # -------------------------------
+            # Gráfico Black/White List
+            # -------------------------------
+            df_bw = pd.DataFrame({
+                'Pessoa': black_list + white_list,
+                'Categoria': ['Black List']*len(black_list) + ['White List']*len(white_list)
+            })
+            if not df_bw.empty:
+                fig_bw = px.bar(df_bw, x='Pessoa', y=[1]*len(df_bw), color='Categoria',
+                                color_discrete_map={'Black List':'#F44336','White List':'#4CAF50'},
+                                title="Black/White List - Visualização", height=400)
+                fig_bw.update_yaxes(showticklabels=False)
+                st.plotly_chart(fig_bw, use_container_width=True)
+            else:
+                st.info("Nenhuma pessoa se enquadra nas listas.")
 
     except Exception as e:
         st.error("❌ Erro, anexe o relatório com colunas e formato correto.")
