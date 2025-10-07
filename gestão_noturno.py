@@ -8,7 +8,7 @@ import plotly.express as px
 # ===============================
 st.set_page_config(page_title="Dashboard Imile - Tempo no Galpão", layout="wide")
 
-# HTML + CSS customizado para o cabeçalho
+# HTML + CSS customizado para o cabeçalho e cards
 st.markdown("""
     <style>
     .header {
@@ -18,6 +18,8 @@ st.markdown("""
         color: white;
         text-align: center;
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        border: 3px solid white; /* borda branca */
+        box-shadow: 2px 2px 10px rgba(0,0,0,0.3);
     }
     .header h1 {
         margin: 0;
@@ -38,6 +40,7 @@ st.markdown("""
         box-shadow: 2px 2px 12px rgba(0,0,0,0.1);
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         color: #004080;
+        border: 2px solid #004080; /* borda azul */
     }
     </style>
     <div class="header">
@@ -86,24 +89,18 @@ dias_pt = {
 # ===============================
 if uploaded_file:
     try:
-        # -------------------------------
         # Ler arquivo
-        # -------------------------------
         if uploaded_file.name.endswith(".csv"):
             df = pd.read_csv(uploaded_file)
         else:
             df = pd.read_excel(uploaded_file)
 
-        # -------------------------------
         # Verifica se as colunas obrigatórias existem
-        # -------------------------------
         colunas_necessarias = {'Person', 'Time', 'Zone', 'Access Point'}
         if not colunas_necessarias.issubset(df.columns):
             raise ValueError("Erro: colunas incorretas")
 
-        # -------------------------------
         # Converter coluna Time para datetime
-        # -------------------------------
         df['Time'] = pd.to_datetime(df['Time'], errors='coerce')
         df = df.dropna(subset=['Time'])
 
@@ -113,9 +110,7 @@ if uploaded_file:
 
         resultados = []
 
-        # ===============================
         # Processamento por pessoa e dia
-        # ===============================
         for pessoa, grupo_pessoa in df.groupby('Person'):
             for data, grupo in grupo_pessoa.groupby('Data'):
                 grupo = grupo.sort_values('Time')
@@ -173,9 +168,7 @@ if uploaded_file:
         df_result['Tempo Dentro do Galpão (HH:MM)'] = df_result['Tempo Dentro do Galpão (h)'].apply(formatar_horas)
         df_result['Tempo Fora do Galpão (HH:MM)'] = df_result['Tempo Fora do Galpão (h)'].apply(formatar_horas)
 
-        # ===============================
         # Filtro multiseleção para aba de análise
-        # ===============================
         opcoes_pessoas = sorted(df_result['Pessoa'].unique().tolist())
         pessoa_sel = st.multiselect(
             "Filtrar por pessoa (pode selecionar mais de uma, ou 'Todos'):", 
@@ -187,14 +180,10 @@ if uploaded_file:
         else:
             df_filtrado = df_result[df_result['Pessoa'].isin(pessoa_sel)]
 
-        # ===============================
         # Cria abas: Análise e Listas
-        # ===============================
         tab1, tab2 = st.tabs(["📊 Análise de Tempo", "⚫⚪ Black/White List"])
 
-        # ===============================
         # Aba 1: Análise de Tempo
-        # ===============================
         with tab1:
             st.subheader("📈 Gráficos de Tempo no Galpão")
 
@@ -229,9 +218,7 @@ if uploaded_file:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
-        # ===============================
         # Aba 2: Black/White List (todos os dados, sem filtro)
-        # ===============================
         with tab2:
             st.subheader("⚫⚪ Black/White List - Todos os Dados")
             media_fora = df_result['Tempo Fora do Galpão (h)'].mean()
@@ -244,16 +231,12 @@ if uploaded_file:
             white_list = [p for p, t in white_candidates.items() if t > media_dentro]
             black_list = [p for p in black_list if p not in white_list]
 
-            # -------------------------------
             # Mostra médias em cards
-            # -------------------------------
             col1, col2 = st.columns(2)
             col1.metric("Média tempo fora do galpão", f"{media_fora:.2f} h")
             col2.metric("Média tempo dentro do galpão", f"{media_dentro:.2f} h")
 
-            # -------------------------------
             # Gráfico Black/White List
-            # -------------------------------
             df_bw = pd.DataFrame({
                 'Pessoa': black_list + white_list,
                 'Categoria': ['Black List']*len(black_list) + ['White List']*len(white_list)
