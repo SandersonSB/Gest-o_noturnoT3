@@ -167,7 +167,7 @@ if uploaded_file:
             # Ranking por tempo dentro
             df_rank_dentro = df_filtrado.groupby('Pessoa')['Tempo Dentro do Galpão (h)'].sum().reset_index().sort_values('Tempo Dentro do Galpão (h)', ascending=False)
             fig_rank_dentro = px.bar(df_rank_dentro, x='Pessoa', y='Tempo Dentro do Galpão (h)',
-                                   title="Ranking: Mais tempo dentro do galpão", color='Tempo Dentro do Galpão (h)', color_continuous_scale='Greens')
+                                   title="Ranking: Mais tempo dentro do galpão", color='Tempo Dentro do Galpão (h)', color_continuous_scale='Blues')
             st.plotly_chart(fig_rank_dentro, use_container_width=True)
 
             # Dia da semana mais fora
