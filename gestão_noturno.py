@@ -211,7 +211,7 @@ if uploaded_file:
             st.plotly_chart(fig_rank_dentro, use_container_width=True)
 
             # Dia da semana mais fora
-            df_dia = df_filtrado.groupby(['Dia da Semana', 'Pessoa'])['Tempo Fora do Galpão (h)'].sum().reset_index()
+            df_dia = df_filtrado.groupby(['Dia da Semana', 'Pessoa'])['Tempo Fora do Galpão (h)'].sum().reset_index().sort_values('Tempo Fora do Galpão (h)', ascending=False')
             fig_dia = px.bar(df_dia, x='Dia da Semana', y='Tempo Fora do Galpão (h)', color='Pessoa', barmode='group',
                              title="Tempo fora do galpão por dia da semana", color_discrete_sequence=px.colors.qualitative.Set3)
             st.plotly_chart(fig_dia, use_container_width=True)
