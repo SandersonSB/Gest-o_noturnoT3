@@ -8,17 +8,18 @@ import plotly.express as px
 # ===============================
 st.set_page_config(page_title="Dashboard Imile - Tempo no Galpão", layout="wide")
 
-# HTML + CSS customizado para o cabeçalho e cards
+# HTML + CSS customizado para header, cards e rodapé
 st.markdown("""
     <style>
+    /* Header */
     .header {
-        background: linear-gradient(90deg, #004080, #FFC107); /* azul e amarelo da Imile */
+        background: linear-gradient(90deg, #004080, #FFC107);
         padding: 25px;
         border-radius: 10px;
         color: white;
         text-align: center;
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        border: 3px solid white; /* borda branca */
+        border: 3px solid white;
         box-shadow: 2px 2px 10px rgba(0,0,0,0.3);
     }
     .header h1 {
@@ -32,6 +33,8 @@ st.markdown("""
         font-weight: 500;
         color: #f9f9f9;
     }
+
+    /* Cards */
     .card {
         background-color: #f2f6fc;
         padding: 20px;
@@ -40,13 +43,34 @@ st.markdown("""
         box-shadow: 2px 2px 12px rgba(0,0,0,0.1);
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         color: #004080;
-        border: 2px solid #004080; /* borda azul */
+        border: 2px solid #004080;
+    }
+
+    /* Rodapé */
+    .footer {
+        background: linear-gradient(90deg, #004080, #FFC107);
+        padding: 15px;
+        border-radius: 10px;
+        color: white;
+        text-align: center;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        border: 2px solid white;
+        box-shadow: 2px 2px 10px rgba(0,0,0,0.3);
+        margin-top: 40px;
+    }
+    .footer p {
+        margin: 0;
+        font-size: 16px;
     }
     </style>
+
+    <!-- Header -->
     <div class="header">
         <h1>IMILE</h1>
         <p>Dashboard de Controle de Tempo no Galpão</p>
     </div>
+
+    <!-- Card de boas-vindas -->
     <div class="card">
         <p>Bem-vindo ao sistema da Imile! Aqui você consegue analisar quanto tempo cada colaborador passa dentro e fora do galpão, gerar relatórios e visualizar rankings de forma clara e elegante.</p>
     </div>
@@ -218,7 +242,7 @@ if uploaded_file:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
-        # Aba 2: Black/White List (todos os dados, sem filtro)
+        # Aba 2: Black/White List
         with tab2:
             st.subheader("⚫⚪ Black/White List - Todos os Dados")
             media_fora = df_result['Tempo Fora do Galpão (h)'].mean()
@@ -256,3 +280,12 @@ if uploaded_file:
 
 else:
     st.info("⬆️ Envie o arquivo CSV ou Excel para começar a análise.")
+
+# ===============================
+# Rodapé
+# ===============================
+st.markdown("""
+    <div class="footer">
+        <p>© 2025 IMILE - Dashboard de Controle de Tempo no Galpão | Todos os direitos reservados</p>
+    </div>
+""", unsafe_allow_html=True)
